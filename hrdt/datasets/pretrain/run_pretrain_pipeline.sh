@@ -9,10 +9,12 @@ if [ -z "$EGODEX_DATA_ROOT" ]; then
 fi
 
 # Change to project root
+export HRDT_PROJECT_ROOT="/dataset_rc_mm/chenby10@xiaopeng.com/Moto_copy"
+export HRDT_OUTPUT_DIR="${HRDT_PROJECT_ROOT}/hrdt/datasets/pretrain"
 cd "$HRDT_PROJECT_ROOT"
 
-# Ensure PYTHONPATH is set for the python execution
-export PYTHONPATH="${HRDT_PROJECT_ROOT}:${PYTHONPATH}"
+# # Ensure PYTHONPATH is set for the python execution
+# export PYTHONPATH="${HRDT_PROJECT_ROOT}:${PYTHONPATH}"
 
 # Define output paths
 export STATS_OUTPUT_PATH="${HRDT_OUTPUT_DIR}/egodex_stat.json"
@@ -25,21 +27,21 @@ echo "Output Dir: $HRDT_OUTPUT_DIR"
 # Step 1: Precompute 48D actions
 echo "Step 1: Precomputing 48D actions..."
 
-python /workspace/chenby10@xiaopeng.com/H_RDT/datasets/pretrain/precompute_48d_actions.py \
+python hrdt/datasets/pretrain/precompute_48d_actions.py \
     --data_root "$EGODEX_DATA_ROOT" \
     --num_processes "$NUM_PROCESSES" \
     $([ "$FORCE_OVERWRITE" = "true" ] && echo "--force_overwrite")
 
 # Step 2: Calculate statistics
 echo "Step 2: Calculating dataset statistics..."
-python /workspace/chenby10@xiaopeng.com/H_RDT/datasets/pretrain/calc_stat.py \
+python hrdt/datasets/pretrain/calc_stat.py \
     --data_root "$EGODEX_DATA_ROOT" \
     --output_path "$STATS_OUTPUT_PATH" \
     --large_values_log "$LARGE_VALUES_LOG"
 
 Step 3: Encode language embeddings
 echo "Step 3: Encoding language embeddings..."
-python /workspace/chenby10@xiaopeng.com/H_RDT/datasets/pretrain/encode_lang_batch.py
+python hrdt/datasets/pretrain/encode_lang_batch.py
 
 echo "Pretrain pipeline completed!"
 echo "Generated files:"

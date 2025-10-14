@@ -9,7 +9,7 @@ export T5_MODEL_PATH="/dataset_rc_mm/share/models/huggingface.co/t5-v1_1-xxl"
 
 # Project structure (auto-detected)
 export HRDT_PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-export HRDT_PROJECT_ROOT="/root/workspace/chenby10@xiaopeng.com/H-RDT"
+export HRDT_PROJECT_ROOT="/dataset_rc_mm/chenby10@xiaopeng.com/Moto_copy/hrdt"
 export HRDT_CONFIG_PATH="${HRDT_PROJECT_ROOT}/configs/hrdt_pretrain.yaml"
 export HRDT_OUTPUT_DIR="${HRDT_PROJECT_ROOT}/datasets/pretrain"
 

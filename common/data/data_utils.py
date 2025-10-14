@@ -17,8 +17,13 @@ from torch.utils.data import ConcatDataset, WeightedRandomSampler
 try:
     from hrdt.datasets.dataset import VLAConsumerDataset, MultiDataCollatorForVLAConsumerDataset
     HRDT_AVAILABLE = True
-except ImportError:
-    print("Warning: HRDT datasets not available. Make sure hrdt module is in PYTHONPATH.")
+    print("✅ HRDT datasets imported successfully")
+except ImportError as e:
+    print(f"❌ Warning: HRDT datasets not available. Import error: {e}")
+    print("Make sure hrdt module is in PYTHONPATH and all dependencies are installed.")
+    import traceback
+    print("Full traceback:")
+    traceback.print_exc()
     HRDT_AVAILABLE = False
 
 data_type2dataset_cls = {
@@ -177,8 +182,8 @@ def load_dataset(data_config, extra_data_config):
                     dataset_params['task_name'] = data_config['task_name']
             
             # Create train and eval datasets
-            train_dataset = dataset_cls(val=True, **dataset_params)
-            eval_dataset = dataset_cls(val=True, **dataset_params)
+            train_dataset = dataset_cls(val=True, **dataset_params)  # Use training data
+            eval_dataset = dataset_cls(val=True, **dataset_params)    # Use test data
         else:
             # Standard dataset creation
             train_dataset = dataset_cls(split='train', **data_config)

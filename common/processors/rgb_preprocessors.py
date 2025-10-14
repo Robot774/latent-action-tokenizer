@@ -43,7 +43,6 @@ class RGB_PreProcessor(torch.nn.Module):
             rgb_shape, 
             rgb_mean=None, 
             rgb_std=None, 
-            dual_path=False,
             dino_mean=None,
             dino_std=None,
             siglip_mean=None,
@@ -56,18 +55,9 @@ class RGB_PreProcessor(torch.nn.Module):
         ):
         super().__init__()
         self.rgb_shape = rgb_shape
-        self.dual_path = dual_path
         
-        if dual_path:
-            # DinoSigLip 双路径归一化
-            self.register_buffer('dino_mean', torch.tensor(dino_mean).view(-1, 1, 1))
-            self.register_buffer('dino_std', torch.tensor(dino_std).view(-1, 1, 1))
-            self.register_buffer('siglip_mean', torch.tensor(siglip_mean).view(-1, 1, 1))
-            self.register_buffer('siglip_std', torch.tensor(siglip_std).view(-1, 1, 1))
-        else:
-            # MAE 单路径归一化
-            self.register_buffer('rgb_mean', torch.tensor(rgb_mean).view(-1, 1, 1))
-            self.register_buffer('rgb_std', torch.tensor(rgb_std).view(-1, 1, 1))
+        self.register_buffer('rgb_mean', torch.tensor(rgb_mean).view(-1, 1, 1))
+        self.register_buffer('rgb_std', torch.tensor(rgb_std).view(-1, 1, 1))
             
         self.do_random_resized_crop = do_random_resized_crop
         self.do_random_shift= do_random_shift
@@ -90,7 +80,9 @@ class RGB_PreProcessor(torch.nn.Module):
         
 
     def forward(self, x, train=False):
-        # x = x.float()*(1/255.)
+        if x.dtype != torch.float32:
+            x = x.float()
+        # x = x.float()*(1/255.)  # 关键：正确的数据类型转换
         # 1. 应用几何变换 (resize, augmentation)
         if train:
             x = self.train_transforms(x)
@@ -105,7 +97,7 @@ class RGB_PreProcessor(torch.nn.Module):
                 "siglip": (x - self.siglip_mean) / (self.siglip_std + 1e-6)
             }
         else:
-            # MAE 单路径归一化
+            # 单路径归一化 (MAE/DINO)
             return (x - self.rgb_mean) / (self.rgb_std + 1e-6)
 
     def post_process(self, x):

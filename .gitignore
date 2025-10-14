@@ -7,4 +7,4 @@ model_checkpoints
 **/*.log
 **/output*
 **/eval_results*
-**/berkeley_fanuc_manipulation
+**/berkeley_fanuc_manipulationvit_large_patch14_reg4_dinov2.lvd142m/model.safetensors

@@ -210,8 +210,9 @@ class LatentMotionTokenizer_Trainer:
         batch = self._adapt_hrdt_batch(batch)
 
         orig_rgb_seq = torch.cat([batch['rgb_initial'], batch['rgb_future']], dim=1) # (b, 2, c, h, w)
-        rgb_seq = self.rgb_preprocessor(orig_rgb_seq, train=True)
-        # rgb_seq = orig_rgb_seq
+        # Skip preprocessing for HRDT data as it's already preprocessed
+        rgb_seq = orig_rgb_seq
+        # rgb_seq = self.rgb_preprocessor(orig_rgb_seq, train=True)
 
         self.latent_motion_tokenizer.eval()
         outputs = self.latent_motion_tokenizer(
@@ -222,13 +223,13 @@ class LatentMotionTokenizer_Trainer:
             
         recons_rgb_future = self.rgb_preprocessor.post_process(outputs["recons_pixel_values"]).detach().cpu()  # (b, c, h, w)
         gt_latent_motion_ids = outputs["indices"].detach().cpu() # (b, per_latent_motion_len)
-        # orig_rgb_seq = orig_rgb_seq.detach().cpu()
-        orig_rgb_seq = self.rgb_preprocessor.post_process(rgb_seq).detach().cpu()
+        # For HRDT data, rgb_seq is already normalized, need post_process for correct visualization
+        orig_rgb_seq_processed = self.rgb_preprocessor.post_process(rgb_seq).detach().cpu()
 
-        for i in range(orig_rgb_seq.shape[0]):
+        for i in range(orig_rgb_seq_processed.shape[0]):
             visualize_latent_motion_reconstruction(
-                initial_frame=orig_rgb_seq[i,0],
-                next_frame=orig_rgb_seq[i,1],
+                initial_frame=orig_rgb_seq_processed[i,0],
+                next_frame=orig_rgb_seq_processed[i,1],
                 recons_next_frame=recons_rgb_future[i],
                 latent_motion_ids=gt_latent_motion_ids[i],
                 path=os.path.join(visualization_dir, f"{self.process_index}-{i}.png")
@@ -299,18 +300,8 @@ class LatentMotionTokenizer_Trainer:
         # image preprocessing
         rgb_seq = torch.cat([batch['rgb_initial'], batch['rgb_future']], dim=1)
         
-        # Apply rgb_preprocessor (支持单路径和双路径)
-        processed_rgb = self.rgb_preprocessor(rgb_seq, train=train)
-
-        # compute loss - 处理不同的输入格式
-        if isinstance(processed_rgb, dict):
-            # DinoSigLip 格式: {"dino": tensor, "siglip": tensor}
-            cond_pixel_values = {k: v[:, 0] for k, v in processed_rgb.items()}
-            target_pixel_values = {k: v[:, 1] for k, v in processed_rgb.items()}
-        else:
-            # MAE 格式: tensor
-            cond_pixel_values = processed_rgb[:, 0]
-            target_pixel_values = processed_rgb[:, 1]
+        cond_pixel_values = rgb_seq[:, 0]
+        target_pixel_values = rgb_seq[:, 1]
             
         loss = self.latent_motion_tokenizer(
             cond_pixel_values=cond_pixel_values,

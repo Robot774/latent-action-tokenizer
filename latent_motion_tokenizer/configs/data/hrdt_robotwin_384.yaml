@@ -1,0 +1,23 @@
+# HRDT RobotWin Dataset Configuration for Motion Tokenizer (384px)
+data_type: "hrdt_robotwin"
+rgb_shape: [384, 384]  # Higher resolution for better quality
+
+# HRDT Dataset Parameters
+img_history_size: 1
+action_chunk_size: 16
+chunk_size: 16
+num_cameras: 3
+state_dim: 14
+action_dim: 14
+
+# RobotWin Specific Parameters
+task_name: "open_laptop"  # Can be changed to other tasks
+max_episodes: 100  # Limit episodes for faster training/testing
+
+# Dataset Processing Parameters
+image_aug: false
+upsample_rate: 3
+use_precomp_lang_embed: true
+
+# Additional Parameters
+skip_frame: 5  # For compatibility with common data utils

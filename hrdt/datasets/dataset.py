@@ -57,8 +57,8 @@ class VLAConsumerDataset(Dataset):
                 val=val,
                 use_precomp_lang_embed=use_precomp_lang_embed,
                 # Note: override default paths if needed
-                data_root="/dataset_rc_mm/share/datasets/ml-site.cdn-apple.com/egodex",
-                stat_path="/workspace/chenby10@xiaopeng.com/H_RDT/datasets/pretrain/egodex_stat.json",
+                data_root="/dataset_rc_mm/share/datasets/ml-site.cdn-apple.com/egodex/",
+                stat_path="hrdt/datasets/pretrain/egodex_stat.json",
             )
         elif self.dataset_name == "robotwin_agilex":
             self.hdf5_dataset = RobotwinAgilexDataset(

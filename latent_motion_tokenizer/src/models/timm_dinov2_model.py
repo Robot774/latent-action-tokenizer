@@ -14,7 +14,10 @@ class TimmDinoV2Output:
 def unpack_tuple(fn: Callable[[Any], Tuple[Any]]) -> Callable[[Any], Any]:
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         result = fn(*args, **kwargs)
-        return result[0] if isinstance(result, tuple) else result
+        # 处理get_intermediate_layers返回的list/tuple格式
+        if isinstance(result, (list, tuple)) and len(result) > 0:
+            return result[0]  # 取第一个元素（通常是我们需要的tensor）
+        return result
 
     return wrapper
 

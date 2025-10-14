@@ -39,8 +39,8 @@ class LatentMotionTokenizer(nn.Module):
         elif hasattr(image_encoder, 'dino_featurizer') and hasattr(image_encoder, 'siglip_featurizer'):
             self.encoder_type = "dinosiglip"
         else:
-            self.encoder_type = "unknown"
-            print(f"Warning: Unknown encoder type: {type(image_encoder)}")
+            self.encoder_type = "dino"  # 默认为DINO
+            print(f"Warning: Assuming DINO encoder type for: {type(image_encoder)}")
 
         self.image_encoder = image_encoder.requires_grad_(False).eval()
 
