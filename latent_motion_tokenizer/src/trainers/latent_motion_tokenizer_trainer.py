@@ -73,7 +73,8 @@ class LatentMotionTokenizer_Trainer:
             device_placement=[True, True, False, False]
         )
         
-        self.writer = SummaryWriter(os.path.join(save_path, 'logs'))
+        # self.writer = SummaryWriter(os.path.join(save_path, 'logs'))
+        self.writer = SummaryWriter('/workspace/chenby10@xiaopeng.com/bifrost-2025091810453311-chenby10/xflow_logs')
         self.accelerator = accelerator
         self.optimizer = optimizer
         self.scheduler = scheduler
@@ -205,8 +206,12 @@ class LatentMotionTokenizer_Trainer:
         self.print(f"Saving visualization results to {visualization_dir} ...")
         batch, _ = self.eval_prefetcher.next_without_none()
 
+        # Adapt batch format if needed
+        batch = self._adapt_hrdt_batch(batch)
+
         orig_rgb_seq = torch.cat([batch['rgb_initial'], batch['rgb_future']], dim=1) # (b, 2, c, h, w)
         rgb_seq = self.rgb_preprocessor(orig_rgb_seq, train=True)
+        # rgb_seq = orig_rgb_seq
 
         self.latent_motion_tokenizer.eval()
         outputs = self.latent_motion_tokenizer(
@@ -230,15 +235,86 @@ class LatentMotionTokenizer_Trainer:
             )
 
 
+    def _adapt_hrdt_batch(self, batch):
+        """
+        Adapt HRDT dataset format to Motion Tokenizer format
+        
+        Args:
+            batch: Input batch with flattened rgb_initial and rgb_future keys
+            
+        Returns:
+            dict: Batch with 'rgb_initial' and 'rgb_future' keys (already flattened by collator)
+        """
+        # HRDT collator now provides flattened structure directly
+        if 'rgb_initial' in batch and 'rgb_future' in batch:
+            # Log format detection (only once to avoid spam)
+            if not hasattr(self, '_hrdt_flat_format_logged'):
+                self.print(f"✅ HRDT flattened format detected:")
+                self.print(f"   - rgb_initial shape: {batch['rgb_initial'].shape}")
+                self.print(f"   - rgb_future shape: {batch['rgb_future'].shape}")
+                self._hrdt_flat_format_logged = True
+            return batch
+        
+    def test_batch_compatibility(self, batch):
+        """
+        Test if a batch is compatible with Motion Tokenizer after adaptation
+        
+        Args:
+            batch: Input batch to test
+            
+        Returns:
+            bool: True if compatible, False otherwise
+        """
+        try:
+            adapted_batch = self._adapt_hrdt_batch(batch)
+            
+            # Check required keys
+            if 'rgb_initial' not in adapted_batch or 'rgb_future' not in adapted_batch:
+                self.print(f"❌ Missing required keys after adaptation")
+                return False
+            
+            # Check tensor shapes
+            rgb_initial = adapted_batch['rgb_initial']
+            rgb_future = adapted_batch['rgb_future']
+            
+            if rgb_initial.dim() != 5 or rgb_future.dim() != 5:
+                self.print(f"❌ Incorrect tensor dimensions: rgb_initial={rgb_initial.dim()}D, rgb_future={rgb_future.dim()}D")
+                return False
+                
+            if rgb_initial.shape[1] != 1 or rgb_future.shape[1] != 1:
+                self.print(f"❌ Incorrect sequence length: rgb_initial={rgb_initial.shape[1]}, rgb_future={rgb_future.shape[1]}")
+                return False
+            
+            self.print(f"✅ Batch compatibility test passed")
+            return True
+            
+        except Exception as e:
+            self.print(f"❌ Batch compatibility test failed: {e}")
+            return False
+
     def calculate_loss(self, batch, train):
+        # Adapt batch format if needed
+        batch = self._adapt_hrdt_batch(batch)
+        
         # image preprocessing
         rgb_seq = torch.cat([batch['rgb_initial'], batch['rgb_future']], dim=1)
-        rgb_seq = self.rgb_preprocessor(rgb_seq, train=train)
+        
+        # Apply rgb_preprocessor (支持单路径和双路径)
+        processed_rgb = self.rgb_preprocessor(rgb_seq, train=train)
 
-        # compute loss
+        # compute loss - 处理不同的输入格式
+        if isinstance(processed_rgb, dict):
+            # DinoSigLip 格式: {"dino": tensor, "siglip": tensor}
+            cond_pixel_values = {k: v[:, 0] for k, v in processed_rgb.items()}
+            target_pixel_values = {k: v[:, 1] for k, v in processed_rgb.items()}
+        else:
+            # MAE 格式: tensor
+            cond_pixel_values = processed_rgb[:, 0]
+            target_pixel_values = processed_rgb[:, 1]
+            
         loss = self.latent_motion_tokenizer(
-            cond_pixel_values=rgb_seq[:,0],
-            target_pixel_values=rgb_seq[:,1]
+            cond_pixel_values=cond_pixel_values,
+            target_pixel_values=target_pixel_values
         )
 
         return loss

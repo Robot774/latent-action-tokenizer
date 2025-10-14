@@ -1,0 +1,29 @@
+# H-RDT multi-dataset mixing configuration
+data_type: "hrdt_mix"
+weighted: true
+unified_action_dim: 48
+
+# Dataset configurations
+sub_data_configs:
+  - data_type: "egodx"
+    weight: 90
+    config_path: "hrdt/configs/data/egodx.yaml"
+    action_dim: 48
+    num_cameras: 1
+  
+  - data_type: "robotwin_agilex"
+    weight: 10
+    config_path: "hrdt/configs/data/robotwin.yaml"
+    action_dim: 14
+    num_cameras: 1  # Use main camera only (processed in collator)
+
+# Common settings
+image_size: [224, 224]
+img_history_size: 1
+use_precomp_lang_embed: true
+
+# DataLoader settings
+batch_size: 8
+num_workers: 4
+pin_memory: true
+persistent_workers: true

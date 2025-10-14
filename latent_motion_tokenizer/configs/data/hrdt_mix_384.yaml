@@ -1,0 +1,39 @@
+# HRDT Mixed Dataset Configuration for Motion Tokenizer
+# Based on test_hrdt_datasets.py verified settings
+data_type: "mix"
+rgb_shape: [384, 384]  # Image resolution for Motion Tokenizer
+weighted: true
+skip_frame: 5
+
+# Sub-dataset configurations
+sub_data_configs:
+  - data_type: "hrdt_egodx"
+    data_name: "egodx"
+    weight: 0.8
+    dataset_name: "egodex"
+    dataset_type: "pretrain"
+    img_history_size: 1
+    action_chunk_size: 4
+    chunk_size: 4
+    num_cameras: 1
+    state_dim: 48
+    action_dim: 48
+    image_aug: false
+    upsample_rate: 3
+    use_precomp_lang_embed: true
+    
+  - data_type: "hrdt_robotwin"
+    data_name: "robotwin"
+    weight: 0.2
+    dataset_name: "robotwin_agilex"
+    dataset_type: "finetune" 
+    task_name: "open_laptop"
+    img_history_size: 1
+    action_chunk_size: 4
+    chunk_size: 4
+    num_cameras: 3
+    state_dim: 14
+    action_dim: 14
+    image_aug: false
+    upsample_rate: 3
+    use_precomp_lang_embed: true

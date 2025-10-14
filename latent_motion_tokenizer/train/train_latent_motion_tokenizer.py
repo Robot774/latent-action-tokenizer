@@ -33,8 +33,17 @@ def main(cfg):
         'do_extract_action': False
     }
     train_dataset, eval_dataset = load_dataset(dataset_config_path, extra_data_config)
+    
+    # Use HRDT MultiDataCollator
+    from hrdt.datasets.dataset import MultiDataCollatorForVLAConsumerDataset
+    collator = MultiDataCollatorForVLAConsumerDataset(
+        unified_action_dim=48, 
+        use_precomp_lang_embed=True
+    )
+    
     dataloader_cls = partial(
         DataLoader, 
+        collate_fn=collator,
         pin_memory=True, # Accelerate data reading
         shuffle=True,
         persistent_workers=True,

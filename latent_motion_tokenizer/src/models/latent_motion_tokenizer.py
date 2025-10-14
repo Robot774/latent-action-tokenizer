@@ -32,8 +32,15 @@ class LatentMotionTokenizer(nn.Module):
         decoder_hidden_size = decoder.config.hidden_size
         m_former_hidden_size = m_former.config.hidden_size
 
+        # 检测编码器类型并适配
         if isinstance(image_encoder, ViTMAEModel):
             image_encoder.config.mask_ratio = 0.0
+            self.encoder_type = "mae"
+        elif hasattr(image_encoder, 'dino_featurizer') and hasattr(image_encoder, 'siglip_featurizer'):
+            self.encoder_type = "dinosiglip"
+        else:
+            self.encoder_type = "unknown"
+            print(f"Warning: Unknown encoder type: {type(image_encoder)}")
 
         self.image_encoder = image_encoder.requires_grad_(False).eval()
 

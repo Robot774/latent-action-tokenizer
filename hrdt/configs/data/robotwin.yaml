@@ -1,0 +1,26 @@
+# RobotWin dataset configuration
+data_type: "robotwin_agilex"
+multi_task_root_dir: "/dataset_rc_mm/share/datasets/huggingface.co/TianxingChen/RoboTwin2.0/dataset"
+stat_path: "hrdt/datasets/robotwin2/stats.json"
+
+# Data characteristics
+action_dim: 14
+state_dim: 14
+num_cameras: 3  # Will be reduced to 1 (main camera) in collator
+img_history_size: 1
+
+# Preprocessing
+image_size: [224, 224]
+mode: "multi_task"
+use_precomp_lang_embed: true
+
+# Training parameters
+task_name: "open_laptop"
+upsample_rate: 3
+
+
+
+
+
+
+

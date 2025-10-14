@@ -1,0 +1,26 @@
+# EgoDx dataset configuration
+data_type: "egodx"
+data_root: "/dataset_rc_mm/share/datasets/ml-site.cdn-apple.com/egodx"
+stat_path: "hrdt/datasets/pretrain/egodx_stat.json"
+
+# Data characteristics
+action_dim: 48
+state_dim: 48
+num_cameras: 1
+img_history_size: 1
+
+# Preprocessing
+image_size: [224, 224]
+upsample_rate: 3
+use_precomp_lang_embed: true
+
+# Training split
+val_ratio: 0.1
+
+
+
+
+
+
+
+

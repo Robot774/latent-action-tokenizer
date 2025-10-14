@@ -1,0 +1,19 @@
+# HRDT EgoDx Dataset Configuration for Motion Tokenizer
+data_type: "hrdt_egodx"
+rgb_shape: [224, 224]  # Image resolution for Motion Tokenizer
+
+# HRDT Dataset Parameters
+img_history_size: 1
+action_chunk_size: 16
+chunk_size: 16
+num_cameras: 1
+state_dim: 48
+action_dim: 48
+
+# Dataset Processing Parameters
+image_aug: false
+upsample_rate: 3
+use_precomp_lang_embed: true
+
+# Additional Parameters
+skip_frame: 5  # For compatibility with common data utils

@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 cd ${PROJECT_ROOT}/latent_motion_tokenizer/train
 accelerate launch --main_process_port 29501 train_latent_motion_tokenizer.py --config_path "${PROJECT_ROOT}/latent_motion_tokenizer/configs/train/${CONFIG_NAME}.yaml"
