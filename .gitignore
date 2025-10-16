@@ -7,4 +7,19 @@ model_checkpoints
 **/*.log
 **/output*
 **/eval_results*
-**/berkeley_fanuc_manipulationvit_large_patch14_reg4_dinov2.lvd142m/model.safetensors
+
+# Large model files
+**/*.safetensors
+**/*.pth
+**/*.pt
+**/pytorch_model.bin
+vit_large_patch14_reg4_dinov2.lvd142m/model.safetensors
+
+# Training outputs and checkpoints
+**/outputs/*/
+**/checkpoints/*/
+**/saved_epoch_*/
+**/temp_epoch_*/
+
+# Temporary files
+**/tmp/

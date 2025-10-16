@@ -1,0 +1,97 @@
+# EmbodimentAware Latent Motion Tokenizer Configuration
+# Based on DinoV2Large with Action Encoder support
+_target_: latent_motion_tokenizer.src.models.latent_motion_tokenizer.EmbodimentAwareLatentMotionTokenizer
+codebook_dim: 32
+commit_loss_w: 1.0
+recon_loss_w: 1.0
+perceptual_loss_w: 1.0
+action_recons_loss_w: 10  # 🆕 Action reconstruction loss weight
+
+# Vision Encoder Configuration
+image_encoder:
+  _target_: latent_motion_tokenizer.src.models.timm_dinov2_model.TimmDinoV2VsionEncoder
+  pretrained_model_name_or_path: "vit_large_patch14_reg4_dinov2.lvd142m"
+
+# Motion Former Configuration  
+m_former:
+  _target_: latent_motion_tokenizer.src.models.m_former.MFormer
+  add_pooling_layer: false
+  config:
+    _target_: transformers.ViTConfig
+    query_num: 8
+    input_hidden_size: 1024  # DINOv2 Large output dimension
+    hidden_size: 1024
+    num_patches: 256 # DINOv2 Large patch count (calculated from actual output)
+    attention_probs_dropout_prob: 0.0
+    hidden_act: "gelu"
+    hidden_dropout_prob: 0.0
+    initializer_range: 0.02
+    intermediate_size: 3072
+    layer_norm_eps: 1e-12
+    model_type: "vit"
+    num_attention_heads: 12
+    num_hidden_layers: 4
+    qkv_bias: true
+
+# Vector Quantizer Configuration
+vector_quantizer:
+  _target_: latent_motion_tokenizer.src.models.vector_quantizer.VectorQuantizer2
+  n_e: 128
+  e_dim: 32
+  beta: 0.25
+  remap: null
+  sane_index_shape: true
+
+# Decoder Configuration
+decoder:
+  _target_: latent_motion_tokenizer.src.models.latent_motion_decoder.LatentMotionDecoder
+  config:
+    _target_: transformers.ViTConfig
+    query_num: 8
+    attention_probs_dropout_prob: 0.0
+    hidden_act: "gelu"
+    hidden_dropout_prob: 0.0
+    hidden_size: 1024
+    image_size: 224
+    initializer_range: 0.02
+    intermediate_size: 3072
+    layer_norm_eps: 1e-12
+    model_type: "vit"
+    num_attention_heads: 12
+    num_channels: 3
+    num_hidden_layers: 12
+    patch_size: 16
+    qkv_bias: true
+    encoder_stride: 16
+    num_patches: 256
+
+# 🆕 Action Encoder Configuration
+action_encoder_config:
+  max_action_dim: 48              # Unified action dimension (supports EgoDex 48D)
+  hidden_size: 1024               # Match m_former hidden_size for consistency
+  num_embodiments: 1             # Start with single embodiment support
+  action_chunk_size: 4           # Action sequence length
+  
+  # 🆕 A-Former Configuration
+  a_former_num_layers: 4         # Number of transformer layers in A-Former
+  a_former_num_heads: 12         # Number of attention heads in A-Former
+  a_former_intermediate_size: 3072  # FFN intermediate size in A-Former
+  
+  # 🆕 Fusion Configuration
+  fusion_num_heads: 8            # Number of attention heads for cross-attention
+  fusion_dropout: 0.1            # Dropout rate in fusion module
+  
+  # Embodiment-specific configurations
+  embodiment_configs:
+    0:
+      name: "egodx"
+      action_dim: 48
+      state_dim: 48
+      description: "EgoDex 48-dimensional hand action representation"
+      
+  # Future embodiments can be added here:
+  # 1:
+  #   name: "robotwin_agilex" 
+  #   action_dim: 14
+  #   state_dim: 14
+  #   description: "RobotWin Agilex 14-dimensional robot action"

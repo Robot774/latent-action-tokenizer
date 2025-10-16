@@ -9,7 +9,7 @@ from functools import partial
 from transformers import AutoTokenizer
 from common.models.model_utils import load_model
 from common.processors.preprocessor_utils import get_rgb_preprocessor
-from latent_motion_tokenizer.src.trainers.latent_motion_tokenizer_trainer import LatentMotionTokenizer_Trainer
+from latent_motion_tokenizer.src.trainers.embodiment_aware_trainer import EmbodimentAwareLatentMotionTokenizer_Trainer
 from torch.utils.data import DataLoader
 from functools import partial
 from common.data.data_utils import load_dataset
@@ -30,15 +30,18 @@ def main(cfg):
     extra_data_config = {
         'sequence_length': 1,
         'do_extract_future_frames': True,
-        'do_extract_action': False
+        'do_extract_action': True   # Enable action extraction for embodiment-aware training
     }
     train_dataset, eval_dataset = load_dataset(dataset_config_path, extra_data_config)
     
     # Use HRDT MultiDataCollator
     from hrdt.datasets.dataset import MultiDataCollatorForVLAConsumerDataset
+    # Pass embodiment mapping from config if available
+    embodiment_mapping = cfg.get('data', {}).get('embodiment_mapping', None)
     collator = MultiDataCollatorForVLAConsumerDataset(
-        unified_action_dim=48, 
-        use_precomp_lang_embed=True
+        unified_action_dim=48,
+        use_precomp_lang_embed=True,
+        embodiment_mapping=embodiment_mapping
     )
     
     dataloader_cls = partial(
@@ -55,13 +58,15 @@ def main(cfg):
     eval_dataloader = dataloader_cls(eval_dataset)
     
     # Prepare Trainer
-    trainer = LatentMotionTokenizer_Trainer(
+    # Use embodiment-aware trainer
+    trainer = EmbodimentAwareLatentMotionTokenizer_Trainer(
         latent_motion_tokenizer=latent_motion_tokenizer,
         rgb_preprocessor=rgb_preprocessor,
         train_dataloader=train_dataloader,
         eval_dataloader=eval_dataloader,
         bs_per_gpu=cfg['dataloader_config']['bs_per_gpu'],
-        **cfg['training_config']
+        **cfg['training_config'],
+        **cfg.get('embodiment_trainer_config', {})
     )
 
     # Start Training

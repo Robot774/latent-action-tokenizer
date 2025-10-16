@@ -182,7 +182,7 @@ def load_dataset(data_config, extra_data_config):
                     dataset_params['task_name'] = data_config['task_name']
             
             # Create train and eval datasets
-            train_dataset = dataset_cls(val=True, **dataset_params)  # Use training data
+            train_dataset = dataset_cls(val=False, **dataset_params)  # Use training data
             eval_dataset = dataset_cls(val=True, **dataset_params)    # Use test data
         else:
             # Standard dataset creation

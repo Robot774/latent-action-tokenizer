@@ -1,0 +1,67 @@
+seed: 42
+output_dir: outputs/emb_aware_robotwin_egodex
+
+model:
+  image_encoder: { type: dinov2_vitl14, pretrained: true, freeze: true }
+  m_former: { query_num: 8, hidden_size: 1024, num_layers: 12, num_heads: 16, intermediate_size: 4096 }
+  vector_quantizer: { codebook_dim: 32, codebook_size: 8192, commitment_cost: 0.25 }
+  decoder: { hidden_size: 1024, num_layers: 12, num_heads: 16, intermediate_size: 4096 }
+
+  action_encoder_config:
+    max_action_dim: 48
+    hidden_size: 1024
+    num_embodiments: 2
+    action_chunk_size: 4
+    a_former_num_layers: 4
+    a_former_num_heads: 12
+    a_former_intermediate_size: 3072
+    fusion_num_heads: 8
+    fusion_dropout: 0.1
+    embodiment_configs:
+      "0": { name: robotwin, effective_action_dim: 14 }
+      "1": { name: egodex,   effective_action_dim: 48 }
+
+  loss:
+    commit_loss_w: 1.0
+    recon_loss_w: 1.0
+    recon_hidden_loss_w: 0.0
+    perceptual_loss_w: 1.0
+    action_recons_loss_w: 1.0
+    use_abs_recons_loss: false
+
+data:
+  embodiment_mapping:
+    robotwin: 0
+    robotwin_agilex: 0
+    egodex: 1
+
+  collate:
+    unified_action_dim: 48
+    main_camera: cam01
+    use_action_norm: true
+
+  train:
+    batch_size: 32
+    num_workers: 8
+    datasets:
+      - { name: robotwin_agilex, embodiment_id: 0, root: /dataset_rc_mm/share/datasets/huggingface.co/TianxingChen/RoboTwin2.0/dataset, type: robotwin, cameras: [cam01] }
+      - { name: egodex,         embodiment_id: 1, root: /dataset_rc_mm/share/datasets/ml-site.cdn-apple.com/egodex/,         type: egodex,   cameras: [single] }
+  val:
+    batch_size: 16
+    num_workers: 4
+    datasets:
+      - { name: robotwin_agilex, embodiment_id: 0, root: /dataset_rc_mm/share/datasets/huggingface.co/TianxingChen/RoboTwin2.0/dataset, type: robotwin, cameras: [cam01] }
+      - { name: egodex,         embodiment_id: 1, root: /dataset_rc_mm/share/datasets/ml-site.cdn-apple.com/egodex/,         type: egodex,   cameras: [single] }
+
+trainer:
+  epochs: 50
+  lr: 1.0e-4
+  weight_decay: 0.01
+  amp: true
+  action_drop_prob: 0.3
+  vision_drop_prob: 0.2
+  eval:
+    out_dir: ${output_dir}/eval
+    samples_to_save: 8
+
+

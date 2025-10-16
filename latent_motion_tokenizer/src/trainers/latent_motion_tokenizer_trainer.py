@@ -37,6 +37,7 @@ class LatentMotionTokenizer_Trainer:
         resume_ckpt_path=None,
         bs_per_gpu=32,
         max_epoch=None,
+        tensorboard_log_dir=None,
     ):
         if resume_ckpt_path is not None:
             print(f"resuming Latent Motion Tokenizer from {resume_ckpt_path} ...")
@@ -44,7 +45,8 @@ class LatentMotionTokenizer_Trainer:
             missing_root_keys = set([k.split(".")[0] for k in missing_keys])
             print('load ', resume_ckpt_path, '\nmissing ', missing_root_keys, '\nunexpected ', unexpected_keys)
         
-        ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)
+        # Use unused-parameter detection: some branches (e.g., A-Former) may be skipped per step
+        ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
         accelerator= Accelerator(
             gradient_accumulation_steps=gradient_accumulation_steps,
             kwargs_handlers=[ddp_kwargs]
@@ -73,8 +75,16 @@ class LatentMotionTokenizer_Trainer:
             device_placement=[True, True, False, False]
         )
         
-        # self.writer = SummaryWriter(os.path.join(save_path, 'logs'))
-        self.writer = SummaryWriter('/workspace/chenby10@xiaopeng.com/bifrost-2025091810453311-chenby10/xflow_logs')
+        # TensorBoard writer: configurable or default under current run save_path
+        log_dir = tensorboard_log_dir or os.path.join(save_path, 'tensorboard_logs')
+        os.makedirs(log_dir, exist_ok=True)
+        self.writer = SummaryWriter(log_dir)
+        # Separate writers per eval mode for side-by-side comparison without extra forwards
+        self.eval_mode_writers = {}
+        for mode_name in ['both', 'action_drop', 'vision_drop']:
+            mode_dir = os.path.join(log_dir, mode_name)
+            os.makedirs(mode_dir, exist_ok=True)
+            self.eval_mode_writers[mode_name] = SummaryWriter(mode_dir)
         self.accelerator = accelerator
         self.optimizer = optimizer
         self.scheduler = scheduler
@@ -151,14 +161,19 @@ class LatentMotionTokenizer_Trainer:
 
                     self.latent_motion_tokenizer.train()
                     self.optimizer.zero_grad()
+
                     loss = self.calculate_loss(batch, train=True)
                     self.accelerator.backward(loss['loss'])
                     self.optimizer.step()
 
-                    for key in loss:
+                    for key, val in loss.items():
+                        # Only aggregate tensor scalars; skip None or non-tensors
+                        if not isinstance(val, torch.Tensor):
+                            continue
+                        v = val if val.ndim == 0 else val.mean()
                         if key not in log_loss:
                             log_loss[key] = 0.0
-                        log_loss[key] += loss[key].detach() / self.print_steps
+                        log_loss[key] += v.detach() / self.print_steps
 
                     cum_load_time += load_time / self.print_steps
 
@@ -166,11 +181,15 @@ class LatentMotionTokenizer_Trainer:
 
                     with torch.no_grad():
                         batch, _ = self.eval_prefetcher.next_without_none()
+                        
                         self.latent_motion_tokenizer.eval()
                         loss = self.calculate_loss(batch, train=True)
 
-                        for key in loss:
-                            eval_log_loss[key] = loss[key].detach()
+                        for key, val in loss.items():
+                            if not isinstance(val, torch.Tensor):
+                                continue
+                            v = val if val.ndim == 0 else val.mean()
+                            eval_log_loss[key] = v.detach()
 
                     self.log(log_loss, eval_log_loss, cum_load_time, clock, epoch, batch_idx, step)
                     log_loss = {}
@@ -302,7 +321,7 @@ class LatentMotionTokenizer_Trainer:
         
         cond_pixel_values = rgb_seq[:, 0]
         target_pixel_values = rgb_seq[:, 1]
-            
+        
         loss = self.latent_motion_tokenizer(
             cond_pixel_values=cond_pixel_values,
             target_pixel_values=target_pixel_values

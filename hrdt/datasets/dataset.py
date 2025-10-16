@@ -272,9 +272,9 @@ class DataCollatorForVLAConsumerDataset(object):
             ]
             for key in keys_to_check:
                 if isinstance(instance[key], torch.Tensor):
-                    item = instance[key]
+                    item = instance[key].float()
                 else:
-                    item = torch.from_numpy(instance[key])
+                    item = torch.from_numpy(instance[key]).float()
                 batch[key].append(item)
 
             # Process images
@@ -322,9 +322,16 @@ class DataCollatorForVLAConsumerDataset(object):
 class MultiDataCollatorForVLAConsumerDataset(object):
     """Collate examples for supervised training."""
 
-    def __init__(self, unified_action_dim=48, use_precomp_lang_embed=True) -> None:
+    def __init__(self, unified_action_dim=48, use_precomp_lang_embed=True, embodiment_mapping=None) -> None:
         self.unified_action_dim = unified_action_dim  # 🆕 3. 统一pad维度
         self.use_precomp_lang_embed = use_precomp_lang_embed
+        # Optional explicit mapping from dataset_name -> embodiment_id
+        # e.g., {'robotwin': 0, 'robotwin_agilex': 0, 'egodex': 1}
+        self.embodiment_mapping = embodiment_mapping or {
+            'robotwin': 0,
+            'robotwin_agilex': 0,
+            'egodex': 1,
+        }
         
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
         # 🆕 4. 构建数据集索引映射
@@ -425,9 +432,10 @@ class MultiDataCollatorForVLAConsumerDataset(object):
             for key in camera_keys:
                 if key in instance:
                     if isinstance(instance[key], torch.Tensor):
-                        item = instance[key]
+                        item = instance[key].float()
                     else:
-                        item = torch.from_numpy(instance[key])
+                        # camera matrices are typically float64 in numpy; cast to float32
+                        item = torch.from_numpy(instance[key]).float()
                     batch[key].append(item)
             
             batch["data_indices"].append(instance["data_idx"])
@@ -491,6 +499,22 @@ class MultiDataCollatorForVLAConsumerDataset(object):
 
         # 🆕 4. 添加数据集映射
         batch["dataset_indices_map"] = dataset_indices_map
+
+        # 🆕 5. Add embodiment_ids using dataset_name mapping
+        # Note: instances contain 'dataset_name'; build ids aligned with batch order
+        try:
+            names = [ins['dataset_name'] for ins in instances]
+            emb_ids = []
+            for name in names:
+                if name in self.embodiment_mapping:
+                    emb_ids.append(self.embodiment_mapping[name])
+                else:
+                    # Fallback: treat unknown as 0
+                    emb_ids.append(0)
+            batch['embodiment_ids'] = torch.tensor(emb_ids, dtype=torch.long)
+        except Exception as e:
+            # If anything goes wrong, default to zeros (vision-only compat)
+            batch['embodiment_ids'] = torch.zeros(len(instances), dtype=torch.long)
 
         return batch
 

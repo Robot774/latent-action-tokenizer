@@ -3,8 +3,8 @@ latent_motion_tokenizer_config_path: "/dataset_rc_mm/chenby10@xiaopeng.com/Moto_
 dataset_config_path: "/dataset_rc_mm/chenby10@xiaopeng.com/Moto_copy/latent_motion_tokenizer/configs/data/hrdt_robotwin.yaml"
 
 dataloader_config:
-  bs_per_gpu: 8  # Batch size per GPU
-  workers_per_gpu: 4
+  bs_per_gpu: 64 # Batch size per GPU
+  workers_per_gpu: 16
   prefetch_factor: 2
 
 rgb_preprocessor_config: 
@@ -19,7 +19,7 @@ training_config:
   print_steps: 100
   lr_max: 0.0001
   weight_decay: 0.0001
-  gradient_accumulation_steps: 2
+  gradient_accumulation_steps: 1
   save_epochs: 2
   save_steps: 5000
   save_path: "/dataset_rc_mm/chenby10@xiaopeng.com/Moto_copy/latent_motion_tokenizer/outputs/hrdt_robotwin_trained/"
