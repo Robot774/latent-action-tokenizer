@@ -9,9 +9,10 @@ from PIL import Image
 from torchvision import transforms as T
 import time
 from collections import OrderedDict
-from .embodiment_aware_action_encoder import EmbodimentAwareActionEncoder, EmbodimentAwareActionDecoder
+from .embodiment_aware_action_encoder import EmbodimentAwareActionEncoder, EmbodimentAwareActionDecoder, StatePoolingActionDecoder
 from .visual_action_fusion import VisualActionFusion
 from .a_former import AFormer
+import math
 
 
 class LatentMotionTokenizer(nn.Module):
@@ -239,6 +240,8 @@ class EmbodimentAwareLatentMotionTokenizer(LatentMotionTokenizer):
         
         # Action encoder configuration
         self.enable_action_conditioning = action_encoder_config is not None
+        # Whether to normalize actions by subtracting state at input and add back at output
+        self.use_state_offset_for_actions = False
         if self.enable_action_conditioning:
             self.action_encoder_config = action_encoder_config
             self._build_action_encoder()
@@ -266,15 +269,34 @@ class EmbodimentAwareLatentMotionTokenizer(LatentMotionTokenizer):
             embodiment_configs=config.get('embodiment_configs', None)
         )
         
-        # 🆕 Create action decoder
-        self.action_decoder = EmbodimentAwareActionDecoder(
-            hidden_size=config['hidden_size'],
-            max_action_dim=config['max_action_dim'],
-            action_chunk_size=config.get('action_chunk_size', 4),
-            num_embodiments=config['num_embodiments'],
-            embodiment_configs=config.get('embodiment_configs', None),
-            query_num=query_num
-        )
+        # 🆕 Create action decoder (configurable)
+        decoder_cfg = config.get('action_decoder', {}) or {}
+        self.action_decoder_type = decoder_cfg.get('type', 'mlp')  # 'mlp' | 'state_transformer' | 'pooled_transformer'
+        if self.action_decoder_type == 'pooled_transformer' or self.action_decoder_type == 'state_transformer':
+            self.action_decoder = StatePoolingActionDecoder(
+                hidden_size=config['hidden_size'],
+                max_action_dim=config['max_action_dim'],
+                action_chunk_size=config.get('action_chunk_size', 4),
+                num_embodiments=config['num_embodiments'],
+                embodiment_configs=config.get('embodiment_configs', None),
+                query_num=query_num,
+                num_layers=decoder_cfg.get('num_layers', 2),
+                num_heads=decoder_cfg.get('num_heads', 8),
+                intermediate_size=decoder_cfg.get('intermediate_size', config['hidden_size'] * 4),
+                dropout=decoder_cfg.get('dropout', 0.1),
+                pos_encoding=decoder_cfg.get('pos_encoding', 'learnable'),
+                inject_mode=decoder_cfg.get('inject_mode', 'add')
+            )
+        else:
+            # default MLP decoder
+            self.action_decoder = EmbodimentAwareActionDecoder(
+                hidden_size=config['hidden_size'],
+                max_action_dim=config['max_action_dim'],
+                action_chunk_size=config.get('action_chunk_size', 4),
+                num_embodiments=config['num_embodiments'],
+                embodiment_configs=config.get('embodiment_configs', None),
+                query_num=query_num
+            )
         
         # 🆕 Create visual-action fusion module
         self.fusion_module = VisualActionFusion(
@@ -296,6 +318,51 @@ class EmbodimentAwareLatentMotionTokenizer(LatentMotionTokenizer):
             model_type="vit"
         )
         self.a_former = AFormer(a_former_config)
+
+        # Read action-state offset switch from config (default: False)
+        self.use_state_offset_for_actions = config.get('use_state_offset_for_actions', False)
+
+        # DCT temporal prior configs
+        self.use_dct_for_actions = config.get('use_dct_for_actions', False)
+        self.dct_keep_k = config.get('dct_keep_k', None)  # keep first K frequencies; None -> keep all
+        self.dct_norm = config.get('dct_norm', 'ortho')
+        self._dct_mats = {}
+
+    def _get_dct_matrix(self, seq_len, device, dtype, norm='ortho'):
+        """Create or fetch a DCT-II matrix of size (seq_len, seq_len).
+        Uses 'ortho' normalization by default to make transform approximately orthonormal.
+        """
+        key = (seq_len, norm, dtype)
+        if key in self._dct_mats:
+            return self._dct_mats[key].to(device=device, dtype=dtype)
+
+        n = torch.arange(seq_len, device=device, dtype=dtype)
+        k = torch.arange(seq_len, device=device, dtype=dtype).unsqueeze(1)
+        # DCT-II basis: C[k, n] = alpha(k) * cos(pi*(n+0.5)*k/T)
+        C = torch.cos(math.pi * (n + 0.5) * k / seq_len)
+        if norm == 'ortho':
+            C[0] = C[0] * (1.0 / math.sqrt(seq_len))
+            C[1:] = C[1:] * math.sqrt(2.0 / seq_len)
+        self._dct_mats[key] = C
+        return C
+
+    def _apply_time_dct(self, actions, keep_k=None, norm='ortho'):
+        """Apply DCT along time dimension (B, T, D) -> (B, T, D).
+        If keep_k is specified and < T, zero out high-frequency components to keep shape.
+        """
+        if actions is None:
+            return None
+        B, T, D = actions.shape
+        C = self._get_dct_matrix(T, actions.device, actions.dtype, norm=norm)  # (T, T)
+        # Multiply along time dim: (B, D, T) @ (T, T)^T -> (B, D, T)
+        x = actions.transpose(1, 2)  # (B, D, T)
+        y = torch.matmul(x, C.t())  # (B, D, T)
+        y = y.transpose(1, 2)  # (B, T, D)
+        if keep_k is not None and 0 < keep_k < T:
+            mask = torch.zeros(T, device=actions.device, dtype=actions.dtype)
+            mask[:keep_k] = 1.0
+            y = y * mask.view(1, T, 1)
+        return y
         
         # print(f"✅ Built EmbodimentAwareActionEncoder with config: {config}")
         # print(f"✅ Built EmbodimentAwareActionDecoder with query_num: {query_num}")
@@ -362,7 +429,20 @@ class EmbodimentAwareLatentMotionTokenizer(LatentMotionTokenizer):
         action_tokens = None  # A-Former output
         
         if actions is not None:
-            action_features = self.action_encoder.encode_action(actions, embodiment_ids)
+            # Optionally normalize actions by subtracting the single-step state
+            if self.use_state_offset_for_actions and states is not None:
+                state_offset = states[:, 0:1, :].to(actions.dtype)
+                actions_input = actions - state_offset
+            else:
+                actions_input = actions
+            # Optionally apply DCT temporal prior along time dimension
+            if getattr(self, 'use_dct_for_actions', False):
+                actions_input = self._apply_time_dct(
+                    actions_input,
+                    keep_k=self.dct_keep_k,
+                    norm=self.dct_norm
+                )
+            action_features = self.action_encoder.encode_action(actions_input, embodiment_ids)
             # print(f"🔧 Encoded actions: {actions.shape} -> {action_features.shape}")
             
         if states is not None:
@@ -431,7 +511,14 @@ class EmbodimentAwareLatentMotionTokenizer(LatentMotionTokenizer):
         # 🆕 6. Action decoding (new functionality)
         decoded_actions = None
         if self.enable_action_conditioning:
-            decoded_actions = self.action_decoder(latent_motion_tokens_up, embodiment_ids)
+            # Call decoder according to type
+            if getattr(self, 'action_decoder_type', 'mlp') in ['pooled_transformer', 'state_transformer']:
+                decoded_actions = self.action_decoder(latent_motion_tokens_up, state_features, embodiment_ids)
+            else:
+                decoded_actions = self.action_decoder(latent_motion_tokens_up, embodiment_ids)
+            # Optionally add back the state offset to bring actions to absolute space
+            if decoded_actions is not None and self.use_state_offset_for_actions and states is not None:
+                decoded_actions = decoded_actions + states[:, 0:1, :].to(decoded_actions.dtype)
             # print(f"🔧 Decoded actions: {latent_motion_tokens_up.shape} -> {decoded_actions.shape}")
             
         if return_recons_only:

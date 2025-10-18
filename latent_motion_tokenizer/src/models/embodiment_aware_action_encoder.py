@@ -211,3 +211,116 @@ class EmbodimentAwareActionDecoder(nn.Module):
     def get_embodiment_info(self, embodiment_id):
         """Get embodiment configuration info"""
         return self.embodiment_configs.get(embodiment_id, self.embodiment_configs[0])
+
+
+class StatePoolingActionDecoder(nn.Module):
+    """
+    Action decoder without cross-attention.
+    - Pools latent motion tokens into a single global context vector
+    - Builds a query sequence by repeating the state token and adding learnable time positional encodings
+    - Runs a shallow Transformer encoder (self-attention only)
+    - Projects per-timestep hidden to action dimensions via category-specific linear heads
+    """
+    def __init__(self,
+                 hidden_size=768,
+                 max_action_dim=48,
+                 action_chunk_size=4,
+                 num_embodiments=1,
+                 embodiment_configs=None,
+                 query_num=8,
+                 num_layers=2,
+                 num_heads=8,
+                 intermediate_size=None,
+                 dropout=0.1,
+                 pos_encoding='learnable',   # 'learnable' | 'sincos' (learnable by default)
+                 inject_mode='add'           # 'add' | 'film'
+                 ):
+        super().__init__()
+
+        self.hidden_size = hidden_size
+        self.max_action_dim = max_action_dim
+        self.action_chunk_size = action_chunk_size
+        self.num_embodiments = num_embodiments
+        self.query_num = query_num
+        self.pos_encoding = pos_encoding
+        self.inject_mode = inject_mode
+
+        self.embodiment_configs = embodiment_configs or {
+            0: {"name": "default", "action_dim": max_action_dim}
+        }
+
+        # Global motion pooling (flatten Q then MLP -> H)
+        self.motion_pooling = nn.Sequential(
+            nn.Linear(hidden_size * query_num, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size)
+        )
+
+        # Learnable positional embeddings for T time steps
+        self.time_pos = nn.Parameter(torch.zeros(1, action_chunk_size, hidden_size))
+        nn.init.trunc_normal_(self.time_pos, std=0.02)
+
+        # Optional FiLM adapters for pooled context
+        if self.inject_mode == 'film':
+            self.gamma_proj = nn.Linear(hidden_size, hidden_size)
+            self.beta_proj = nn.Linear(hidden_size, hidden_size)
+
+        # Shallow Transformer encoder (self-attention over time)
+        ff_dim = intermediate_size or (hidden_size * 4)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=hidden_size,
+            nhead=num_heads,
+            dim_feedforward=ff_dim,
+            dropout=dropout,
+            activation='gelu',
+            batch_first=True,
+            norm_first=True
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+        # Category-specific projection: H -> A (per time step)
+        self.out_proj = CategorySpecificLinear(
+            num_categories=num_embodiments,
+            input_dim=hidden_size,
+            hidden_dim=max_action_dim
+        )
+
+    def forward(self, latent_motion_tokens, state_features=None, embodiment_ids=None):
+        """
+        Args:
+            latent_motion_tokens: (B, Q, H)
+            state_features: (B, 1, H) or None -> if None, zeros used
+            embodiment_ids: (B,)
+        Returns:
+            decoded_actions: (B, T, A)
+        """
+        if embodiment_ids is None:
+            embodiment_ids = torch.zeros(latent_motion_tokens.shape[0], dtype=torch.long, device=latent_motion_tokens.device)
+
+        B, Q, H = latent_motion_tokens.shape
+        T = self.action_chunk_size
+
+        # 1) Global pooling of motion tokens
+        flat = latent_motion_tokens.reshape(B, -1)  # (B, Q*H)
+        pooled_motion = self.motion_pooling(flat)   # (B, H)
+
+        # 2) Build queries from state + time positional encoding
+        if state_features is None:
+            state_features = torch.zeros(B, 1, H, device=latent_motion_tokens.device, dtype=latent_motion_tokens.dtype)
+        state_tokens = state_features.expand(B, T, H)
+        pos = self.time_pos
+        queries = state_tokens + pos
+
+        if self.inject_mode == 'add':
+            queries = queries + pooled_motion.unsqueeze(1)
+        elif self.inject_mode == 'film':
+            gamma = self.gamma_proj(pooled_motion).unsqueeze(1)
+            beta = self.beta_proj(pooled_motion).unsqueeze(1)
+            queries = queries * (1.0 + gamma) + beta
+
+        # 3) Temporal modeling via shallow Transformer
+        hidden = self.transformer(queries)  # (B, T, H)
+
+        # 4) Category-specific projection to actions
+        decoded_actions = self.out_proj(hidden, embodiment_ids)  # (B, T, A)
+        return decoded_actions

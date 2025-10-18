@@ -1,0 +1,96 @@
+# Embodiment-aware Latent Motion Tokenizer (RobotWin only, DINOv2 backbone, 224px)
+_target_: latent_motion_tokenizer.src.models.latent_motion_tokenizer.EmbodimentAwareLatentMotionTokenizer
+
+# Codebook / losses
+codebook_dim: 32
+commit_loss_w: 1.0
+recon_loss_w: 0.0
+perceptual_loss_w: 0.0
+action_recons_loss_w: 10.0
+
+# Vision Encoder (DINOv2 Large frozen)
+image_encoder:
+  _target_: latent_motion_tokenizer.src.models.timm_dinov2_model.TimmDinoV2VsionEncoder
+  pretrained_model_name_or_path: "vit_large_patch14_reg4_dinov2.lvd142m"
+
+# Motion Former (M-Former)
+m_former:
+  _target_: latent_motion_tokenizer.src.models.m_former.MFormer
+  add_pooling_layer: false
+  config:
+    _target_: transformers.ViTConfig
+    model_type: "vit"
+    qkv_bias: true
+    query_num: 8
+    input_hidden_size: 1024         # DINOv2-L 输出
+    hidden_size: 1024                # M-Former hidden，与decoder一致
+    intermediate_size: 3072
+    num_attention_heads: 16
+    num_hidden_layers: 4
+    num_patches: 256
+    hidden_act: "gelu"
+    hidden_dropout_prob: 0.0
+    attention_probs_dropout_prob: 0.0
+    initializer_range: 0.02
+    layer_norm_eps: 1e-12
+
+# Vector Quantizer
+vector_quantizer:
+  _target_: latent_motion_tokenizer.src.models.vector_quantizer.VectorQuantizer2
+  n_e: 128
+  e_dim: 32
+  beta: 0.25
+  remap: null
+  sane_index_shape: true
+
+# Decoder (ViT-like)
+decoder:
+  _target_: latent_motion_tokenizer.src.models.latent_motion_decoder.LatentMotionDecoder
+  config:
+    _target_: transformers.ViTConfig
+    model_type: "vit"
+    qkv_bias: true
+    query_num: 8
+    hidden_size: 1024
+    intermediate_size: 3072
+    num_attention_heads: 16
+    num_hidden_layers: 12
+    num_patches: 256
+    image_size: 224
+    patch_size: 14
+    encoder_stride: 14
+    num_channels: 3
+    hidden_act: "gelu"
+    hidden_dropout_prob: 0.0
+    attention_probs_dropout_prob: 0.0
+    initializer_range: 0.02
+    layer_norm_eps: 1e-12
+
+# Action encoder/decoder + A-Former + Fusion（RobotWin单embodiment）
+action_encoder_config:
+  max_action_dim: 48               # 统一维度
+  hidden_size: 1024                 # 与 M-Former hidden 对齐
+  num_embodiments: 1               # 仅 RobotWin
+  action_chunk_size: 16
+  use_state_offset_for_actions: true
+  use_dct_for_actions: true
+  dct_keep_k: 8       # 例如仅保留前2个频率
+  dct_norm: ortho     # 或 none
+  # A-Former
+  a_former_num_layers: 4
+  a_former_num_heads: 16
+  a_former_intermediate_size: 3072
+
+  # Fusion
+  fusion_num_heads: 8
+  fusion_dropout: 0.1
+
+  # Embodiment-specific（仅 ID:0）
+  embodiment_configs:
+    0:
+      name: "robotwin"
+      action_dim: 14
+      state_dim: 14
+      description: "RobotWin 14D robot joint actions"
+
+
